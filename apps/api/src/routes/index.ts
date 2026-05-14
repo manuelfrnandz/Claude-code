@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { webhookRouter } from './webhook';
 
 export const routes = Router();
 
@@ -6,3 +7,5 @@ export const routes = Router();
 routes.get('/api/v1/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
 });
+
+routes.use('/', webhookRouter);
