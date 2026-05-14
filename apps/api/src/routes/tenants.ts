@@ -180,7 +180,7 @@ tenantsRouter.post(
       });
     } catch (err) {
       logger.error(
-        { error: err instanceof Error ? err.message : err, stack: err instanceof Error ? err.stack : undefined },
+        { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
         'setup_error',
       );
       next(err);
