@@ -3,6 +3,7 @@ import { webhookRouter } from './webhook';
 import { tenantsRouter } from './tenants';
 import { leadsRouter } from './leads';
 import { conversationsRouter } from './conversations';
+import { statsRouter } from './stats';
 
 export const routes = Router();
 
@@ -15,3 +16,4 @@ routes.use('/', webhookRouter);
 routes.use('/', tenantsRouter);   // includes /api/v1/setup (own auth) + tenants (tenantAuth)
 routes.use('/', leadsRouter);
 routes.use('/', conversationsRouter);
+routes.use('/', statsRouter);

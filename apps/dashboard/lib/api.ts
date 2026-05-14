@@ -55,6 +55,40 @@ export const tenantApi = {
     api.put(`/tenants/${tenantId}/config`, data).then((r) => r.data),
 };
 
+// ─── Stats ────────────────────────────────────────────────────────────────────
+export const statsApi = {
+  get: () => api.get('/stats').then((r) => r.data),
+};
+
+// ─── Setup ────────────────────────────────────────────────────────────────────
+export interface SetupPayload {
+  business_name: string;
+  email: string;
+  bot_name?: string;
+  wa_phone_number_id?: string;
+  wa_access_token?: string;
+  personality?: string;
+  language?: string;
+  welcome_message?: string;
+  phone_human?: string;
+}
+
+export interface SetupResult {
+  tenant_id: string;
+  config_id: string;
+  message: string;
+}
+
+export async function setupTenant(
+  payload: SetupPayload,
+  adminSecret: string,
+): Promise<SetupResult> {
+  const res = await api.post('/setup', payload, {
+    headers: { Authorization: `Bearer ${adminSecret}` },
+  });
+  return res.data;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface Lead {
   id: string;
