@@ -6,8 +6,6 @@ __pycache__/
 venv/
 env/
 *.egg-info/
-dist/
-build/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
@@ -15,16 +13,21 @@ htmlcov/
 .coverage
 coverage.xml
 
+# Node
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+coverage/
+
+# Next.js
+.next/
+out/
+
 # Environment
 .env
 .env.local
 .env.*.local
-
-# Node
-node_modules/
-.next/
-out/
-.turbo/
 
 # IDE
 .vscode/
@@ -39,10 +42,9 @@ Thumbs.db
 *.log
 logs/
 
-# Database
+# Misc
 *.sqlite3
-
-# Secrets
 *.pem
 *.key
 credentials.json
+.turbo/
