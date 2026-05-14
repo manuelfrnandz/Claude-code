@@ -13,6 +13,7 @@ import {
   getTenantConfigByPhoneNumberId,
   upsertLead,
   getOrCreateConversation,
+  updateConversationIntent,
   saveMessage,
   getRecentMessages,
 } from '../supabase';
@@ -77,22 +78,19 @@ export async function processMessageJob(job: Job<MessageJobData>): Promise<void>
   await upsertLead(tenant.tenantId, msg.from, intent);
 
   // ── 7. Get or create conversation; read per-conversation mode ─────────────
-  const conversation = await getOrCreateConversation(
-    tenant.tenantId,
-    msg.from,
-    tenant.conversationMode,
-  );
+  const conversation = await getOrCreateConversation(tenant.tenantId, msg.from);
+  await updateConversationIntent(conversation.id, intent);
 
   // ── 8. Save user message to Supabase ──────────────────────────────────────
-  await saveMessage(
-    tenant.tenantId,
-    conversation.id,
-    msg.from,
-    'user',
-    text,
+  await saveMessage({
+    tenantId: tenant.tenantId,
+    conversationId: conversation.id,
+    phone: msg.from,
+    role: 'user',
+    content: text,
     messageType,
-    msg.waMessageId,
-  );
+    waMessageId: msg.waMessageId,
+  });
 
   // ── 9. Conversation mode routing ──────────────────────────────────────────
   if (conversation.mode === 'human') {
@@ -109,14 +107,21 @@ export async function processMessageJob(job: Job<MessageJobData>): Promise<void>
   }
 
   // ── 10. Load recent messages for context ──────────────────────────────────
-  const history = await getRecentMessages(conversation.id);
+  const history = await getRecentMessages(conversation.id, 10);
 
   // ── 11. Build prompt + generate response ──────────────────────────────────
   const systemPrompt = buildSystemPrompt(tenant);
   const responseText = await generateResponse(history, systemPrompt, tenant.tenantId);
 
   // ── 12. Persist assistant message ─────────────────────────────────────────
-  await saveMessage(tenant.tenantId, conversation.id, msg.from, 'assistant', responseText, 'text');
+  await saveMessage({
+    tenantId: tenant.tenantId,
+    conversationId: conversation.id,
+    phone: msg.from,
+    role: 'assistant',
+    content: responseText,
+    messageType: 'text',
+  });
 
   // ── 13. Update session ────────────────────────────────────────────────────
   const prevSession = await getSession(tenant.tenantId, msg.from);

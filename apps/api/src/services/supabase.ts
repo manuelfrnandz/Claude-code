@@ -51,39 +51,17 @@ export async function getTenantConfigByPhoneNumberId(
   };
 }
 
-// ─── Lead ─────────────────────────────────────────────────────────────────────
+// ─── Conversations ────────────────────────────────────────────────────────────
 
-export async function upsertLead(
-  tenantId: string,
-  phone: string,
-  intent: string,
-): Promise<string> {
-  const { data, error } = await supabase
-    .from('leads')
-    .upsert(
-      {
-        tenant_id: tenantId,
-        phone_number: phone,
-        intent_detected: intent,
-        last_contact_at: new Date().toISOString(),
-      },
-      { onConflict: 'tenant_id,phone_number', ignoreDuplicates: false },
-    )
-    .select('id')
-    .single();
-
-  if (error) throw new Error(`upsertLead failed: ${error.message}`);
-  return data.id as string;
+export interface Conversation {
+  id: string;
+  mode: TenantConfig['conversationMode'];
 }
-
-// ─── Conversation ─────────────────────────────────────────────────────────────
 
 export async function getOrCreateConversation(
   tenantId: string,
   phone: string,
-  defaultMode: TenantConfig['conversationMode'],
-): Promise<{ id: string; mode: TenantConfig['conversationMode'] }> {
-  // Look for an existing active conversation
+): Promise<Conversation> {
   const { data: existing } = await supabase
     .from('conversations')
     .select('id, mode')
@@ -103,7 +81,7 @@ export async function getOrCreateConversation(
 
   const { data: created, error } = await supabase
     .from('conversations')
-    .insert({ tenant_id: tenantId, phone, mode: defaultMode })
+    .insert({ tenant_id: tenantId, phone })
     .select('id, mode')
     .single();
 
@@ -114,7 +92,7 @@ export async function getOrCreateConversation(
   };
 }
 
-export async function setConversationMode(
+export async function updateConversationMode(
   conversationId: string,
   mode: TenantConfig['conversationMode'],
 ): Promise<void> {
@@ -123,42 +101,56 @@ export async function setConversationMode(
     .update({ mode, status: mode === 'human' ? 'handoff' : 'active' })
     .eq('id', conversationId);
 
-  if (error) throw new Error(`setConversationMode failed: ${error.message}`);
+  if (error) throw new Error(`updateConversationMode failed: ${error.message}`);
+}
+
+export async function updateConversationIntent(
+  conversationId: string,
+  intent: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('conversations')
+    .update({ primary_intent: intent })
+    .eq('id', conversationId);
+
+  if (error) throw new Error(`updateConversationIntent failed: ${error.message}`);
 }
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 
-export async function saveMessage(
-  tenantId: string,
-  conversationId: string,
-  phone: string,
-  role: 'user' | 'assistant',
-  content: string,
-  messageType: 'text' | 'audio',
-  waMessageId?: string,
-): Promise<void> {
+export interface SaveMessageParams {
+  tenantId: string;
+  conversationId: string;
+  phone: string;
+  role: 'user' | 'assistant';
+  content: string;
+  messageType: 'text' | 'audio';
+  waMessageId?: string;
+}
+
+export async function saveMessage(params: SaveMessageParams): Promise<void> {
   const { error } = await supabase.from('messages').insert({
-    tenant_id: tenantId,
-    conversation_id: conversationId,
-    phone,
-    role,
-    content,
-    message_type: messageType,
-    wa_message_id: waMessageId ?? null,
+    tenant_id: params.tenantId,
+    conversation_id: params.conversationId,
+    phone: params.phone,
+    role: params.role,
+    content: params.content,
+    message_type: params.messageType,
+    wa_message_id: params.waMessageId ?? null,
   });
 
   if (error) throw new Error(`saveMessage failed: ${error.message}`);
 }
 
-export interface DbMessage {
+export interface StoredMessage {
   role: 'user' | 'assistant';
   content: string;
 }
 
 export async function getRecentMessages(
   conversationId: string,
-  limit = 10,
-): Promise<DbMessage[]> {
+  limit: number,
+): Promise<StoredMessage[]> {
   const { data, error } = await supabase
     .from('messages')
     .select('role, content')
@@ -168,5 +160,22 @@ export async function getRecentMessages(
 
   if (error) throw new Error(`getRecentMessages failed: ${error.message}`);
   // Reverse so oldest first (natural conversation order for the LLM)
-  return ((data ?? []) as DbMessage[]).reverse();
+  return ((data ?? []) as StoredMessage[]).reverse();
+}
+
+// ─── Leads ────────────────────────────────────────────────────────────────────
+
+export async function upsertLead(tenantId: string, phone: string, intent?: string): Promise<void> {
+  const payload: Record<string, unknown> = {
+    tenant_id: tenantId,
+    phone_number: phone,
+    last_contact_at: new Date().toISOString(),
+  };
+  if (intent) payload['intent_detected'] = intent;
+
+  const { error } = await supabase
+    .from('leads')
+    .upsert(payload, { onConflict: 'tenant_id,phone_number', ignoreDuplicates: false });
+
+  if (error) throw new Error(`upsertLead failed: ${error.message}`);
 }
