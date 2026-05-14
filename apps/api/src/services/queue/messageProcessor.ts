@@ -1,6 +1,5 @@
 import { Job } from 'bullmq';
 import { logger } from '../../utils/logger';
-import { config } from '../../config';
 import { getRedisClient } from '../redis';
 import { getSession, setSession } from '../session/sessionManager';
 import { transcribeAudio } from '../audio/transcriber';
@@ -8,7 +7,7 @@ import { simulateTyping } from '../whatsapp/typingSimulator';
 import { sendText } from '../whatsapp/sender';
 import { classifyIntent } from '../ai/intentClassifier';
 import { buildSystemPrompt } from '../ai/promptBuilder';
-import { generateResponse } from '../ai/chatEngine';
+import { generateResponse, type ChatMessage } from '../ai/chatEngine';
 import {
   getTenantConfigByPhoneNumberId,
   upsertLead,
@@ -19,71 +18,102 @@ import {
 } from '../supabase';
 import type { MessageJobData } from './messageQueue';
 
-const DEDUP_TTL = 300; // seconds
+const DEDUP_TTL = 300;
 
 export async function processMessageJob(job: Job<MessageJobData>): Promise<void> {
   const { tenantId: phoneNumberId, parsedMessage: msg } = job.data;
 
-  // ── 1. Load tenant ────────────────────────────────────────────────────────
-  const tenant = await getTenantConfigByPhoneNumberId(phoneNumberId);
-  if (!tenant) {
+  // ── PASO 1: Load tenant ───────────────────────────────────────────────────
+  const tenantConfig = await getTenantConfigByPhoneNumberId(phoneNumberId);
+  if (!tenantConfig) {
     logger.warn({ phoneNumberId }, 'tenant_not_found');
     return;
   }
 
-  // ── 2. Dedup — skip if we already processed this WhatsApp message id ──────
+  const { tenantId, waAccessToken } = tenantConfig;
+
+  // ── PASO 2: Dedup ─────────────────────────────────────────────────────────
   const redis = await getRedisClient();
   const dedupKey = `dedup:${msg.waMessageId}`;
-  const seen = await redis.get(dedupKey);
-  if (seen) {
-    logger.debug({ waMessageId: msg.waMessageId }, 'message_dedup_skipped');
+  if (await redis.get(dedupKey)) {
+    logger.debug({ waMessageId: msg.waMessageId }, 'duplicate_message');
     return;
   }
   await redis.set(dedupKey, '1', DEDUP_TTL);
 
-  // ── 3. Rate limit — max 10 messages / minute / phone ─────────────────────
-  const rlKey = `ratelimit:${tenant.tenantId}:${msg.from}`;
-  const count = await redis.incr(rlKey);
-  if (count === 1) {
-    // First hit in this window — set expiry (incr doesn't set TTL)
-    await redis.set(rlKey, String(count), 60);
-  }
-  if (count > 10) {
-    logger.debug({ from: msg.from, count }, 'rate_limit_exceeded');
-    return;
-  }
-
-  // ── 4. Resolve text content (transcribe audio if needed) ──────────────────
+  // ── PASO 3: Resolve text content ──────────────────────────────────────────
   let text: string;
   let messageType: 'text' | 'audio';
 
-  if (msg.type === 'audio') {
-    try {
-      text = await transcribeAudio(msg.audioId, tenant.waAccessToken);
-      messageType = 'audio';
-    } catch (err) {
-      logger.warn({ err: (err as Error).message, from: msg.from }, 'audio_transcription_failed');
+  switch (msg.type) {
+    case 'audio':
+      try {
+        text = await transcribeAudio(msg.audioId, waAccessToken);
+        messageType = 'audio';
+      } catch (err) {
+        logger.warn({ err: (err as Error).message, from: msg.from }, 'audio_transcription_failed');
+        return;
+      }
+      break;
+
+    case 'text':
+      text = msg.text;
+      messageType = 'text';
+      break;
+
+    default:
+      logger.debug({ type: (msg as { type: string }).type }, 'unsupported_message_type');
       return;
-    }
-  } else {
-    text = msg.text;
-    messageType = 'text';
   }
 
-  // ── 5. Typing indicator (mark as read + brief delay) ──────────────────────
-  await simulateTyping(phoneNumberId, tenant.waAccessToken, msg.waMessageId);
+  // ── PASO 4: Typing indicator ──────────────────────────────────────────────
+  await simulateTyping(phoneNumberId, waAccessToken, msg.from, msg.waMessageId);
 
-  // ── 6. Upsert lead ────────────────────────────────────────────────────────
-  const { intent } = await classifyIntent(text, tenant.enabledIntents);
-  await upsertLead(tenant.tenantId, msg.from, intent);
+  // ── PASO 5: Upsert lead ───────────────────────────────────────────────────
+  await upsertLead(tenantId, msg.from);
 
-  // ── 7. Get or create conversation; read per-conversation mode ─────────────
-  const conversation = await getOrCreateConversation(tenant.tenantId, msg.from);
+  // ── PASO 6: Get or create conversation ───────────────────────────────────
+  const conversation = await getOrCreateConversation(tenantId, msg.from);
+
+  // ── PASO 7: Load recent messages ─────────────────────────────────────────
+  const recentMessages = await getRecentMessages(conversation.id, 10);
+
+  // ── PASO 8: Mode routing ──────────────────────────────────────────────────
+  if (conversation.mode === 'human') {
+    await saveMessage({
+      tenantId,
+      conversationId: conversation.id,
+      phone: msg.from,
+      role: 'user',
+      content: text,
+      messageType,
+      waMessageId: msg.waMessageId,
+    });
+    logger.info({ conversationId: conversation.id, from: msg.from }, 'conversation_human_mode_skip');
+    return;
+  }
+
+  if (conversation.mode === 'hybrid') {
+    logger.info({ tenantId, phone: msg.from, conversationId: conversation.id }, 'hybrid_active');
+  }
+
+  // ── PASO 9: Classify intent ───────────────────────────────────────────────
+  const { intent } = await classifyIntent(text, tenantConfig.enabledIntents);
   await updateConversationIntent(conversation.id, intent);
 
-  // ── 8. Save user message to Supabase ──────────────────────────────────────
+  // ── PASO 10: Build system prompt ──────────────────────────────────────────
+  const systemPrompt = buildSystemPrompt(tenantConfig);
+
+  // ── PASO 11: Generate AI response ────────────────────────────────────────
+  const chatHistory: ChatMessage[] = recentMessages.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
+  const responseText = await generateResponse(chatHistory, systemPrompt, tenantId);
+
+  // ── PASO 12: Persist user + assistant messages ────────────────────────────
   await saveMessage({
-    tenantId: tenant.tenantId,
+    tenantId,
     conversationId: conversation.id,
     phone: msg.from,
     role: 'user',
@@ -91,31 +121,8 @@ export async function processMessageJob(job: Job<MessageJobData>): Promise<void>
     messageType,
     waMessageId: msg.waMessageId,
   });
-
-  // ── 9. Conversation mode routing ──────────────────────────────────────────
-  if (conversation.mode === 'human') {
-    logger.info({ conversationId: conversation.id, from: msg.from }, 'conversation_human_mode_skip');
-    return;
-  }
-
-  if (conversation.mode === 'hybrid') {
-    logger.info(
-      { tenantId: tenant.tenantId, phone: msg.from, conversationId: conversation.id },
-      'hybrid_conversation_active',
-    );
-    // Continues to AI pipeline — supervisor can see the conversation live
-  }
-
-  // ── 10. Load recent messages for context ──────────────────────────────────
-  const history = await getRecentMessages(conversation.id, 10);
-
-  // ── 11. Build prompt + generate response ──────────────────────────────────
-  const systemPrompt = buildSystemPrompt(tenant);
-  const responseText = await generateResponse(history, systemPrompt, tenant.tenantId);
-
-  // ── 12. Persist assistant message ─────────────────────────────────────────
   await saveMessage({
-    tenantId: tenant.tenantId,
+    tenantId,
     conversationId: conversation.id,
     phone: msg.from,
     role: 'assistant',
@@ -123,25 +130,19 @@ export async function processMessageJob(job: Job<MessageJobData>): Promise<void>
     messageType: 'text',
   });
 
-  // ── 13. Update session ────────────────────────────────────────────────────
-  const prevSession = await getSession(tenant.tenantId, msg.from);
-  await setSession(tenant.tenantId, msg.from, {
+  // ── PASO 13: Update session ───────────────────────────────────────────────
+  const prevSession = await getSession(tenantId, msg.from);
+  await setSession(tenantId, msg.from, {
     conversationId: conversation.id,
     lastActivity: Date.now(),
     messageCount: (prevSession?.messageCount ?? 0) + 1,
   });
 
-  // ── 14. Send reply to WhatsApp ────────────────────────────────────────────
-  await sendText(phoneNumberId, tenant.waAccessToken, msg.from, responseText);
+  // ── PASO 14: Send reply ───────────────────────────────────────────────────
+  await sendText(phoneNumberId, waAccessToken, msg.from, responseText);
 
   logger.info(
-    {
-      tenantId: tenant.tenantId,
-      conversationId: conversation.id,
-      from: msg.from,
-      intent,
-      mode: conversation.mode,
-    },
+    { tenantId, conversationId: conversation.id, from: msg.from, intent, mode: conversation.mode },
     'message_pipeline_complete',
   );
 }

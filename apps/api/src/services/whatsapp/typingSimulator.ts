@@ -13,13 +13,14 @@ const MAX_DELAY_MS = 3000;
 export async function simulateTyping(
   phoneNumberId: string,
   accessToken: string,
+  phone: string,
   waMessageId: string,
   delayMs = 1200,
 ): Promise<void> {
   try {
     await markAsRead(phoneNumberId, accessToken, waMessageId);
   } catch (err) {
-    logger.warn({ err: (err as Error).message }, 'typing_simulator_mark_read_failed');
+    logger.warn({ err: (err as Error).message, phone }, 'typing_simulator_mark_read_failed');
   }
 
   await new Promise<void>((resolve) =>
