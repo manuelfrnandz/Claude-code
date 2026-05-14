@@ -178,9 +178,10 @@ tenantsRouter.post(
         config_id: tenantConfig.id,
         message: 'Tenant created successfully',
       });
-    } catch (err) {
+    } catch (err: unknown) {
+      console.error('SETUP_ERROR_DETAIL:', err);
       logger.error(
-        { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined },
+        { message: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined, raw: JSON.stringify(err) },
         'setup_error',
       );
       next(err);
