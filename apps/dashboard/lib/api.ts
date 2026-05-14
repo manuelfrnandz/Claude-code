@@ -9,13 +9,14 @@ export const api = axios.create({
   },
 });
 
-// Inject tenant ID from localStorage/session
+// Inject tenant ID — prefers localStorage (runtime), falls back to env var (build-time)
 api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    const tenantId = localStorage.getItem("tenant_id");
-    if (tenantId) {
-      config.headers["X-Tenant-ID"] = tenantId;
-    }
+  const tenantId =
+    (typeof window !== 'undefined' ? localStorage.getItem('tenant_id') : null) ??
+    process.env.NEXT_PUBLIC_TENANT_ID ??
+    '';
+  if (tenantId) {
+    config.headers['X-Tenant-ID'] = tenantId;
   }
   return config;
 });
@@ -49,9 +50,9 @@ export const conversationsApi = {
 
 // ─── Tenant Config ────────────────────────────────────────────────────────────
 export const tenantApi = {
-  getConfig: (tenantId: string) =>
+  getConfig: (tenantId: string): Promise<TenantConfig> =>
     api.get(`/tenants/${tenantId}/config`).then((r) => r.data),
-  updateConfig: (tenantId: string, data: Partial<TenantConfig>) =>
+  updateConfig: (tenantId: string, data: Partial<TenantConfig>): Promise<TenantConfig> =>
     api.put(`/tenants/${tenantId}/config`, data).then((r) => r.data),
 };
 
@@ -120,32 +121,27 @@ export interface OrderItem {
 }
 
 export interface TenantConfig {
+  id?: string;
+  tenant_id?: string;
   bot_name: string;
   business_name: string;
-  business_description: string;
+  business_description: string | null;
   personality: string;
   language: string;
-  location: string;
-  phone_human: string;
-  schedule: Record<string, { open: string; close: string; closed?: boolean }>;
-  catalog_data: CatalogItem[];
-  faq_data: FAQ[];
-  enabled_flows: string[];
+  wa_phone_number_id: string | null;
+  wa_access_token: string | null;
+  system_prompt: string | null;
+  catalog_data: unknown;
+  faq_data: unknown;
+  schedule: unknown;
+  location: string | null;
+  phone_human: string | null;
+  notification_email: string | null;
+  welcome_message: string | null;
+  escalation_triggers: string[];
+  conversation_mode: 'ai' | 'human' | 'hybrid';
+  enabled_intents: string[];
   orders_enabled: boolean;
   appointments_enabled: boolean;
-  escalation_triggers: string[];
-  custom_instructions: string;
-  welcome_message: string;
-}
-
-export interface CatalogItem {
-  name: string;
-  price: number;
-  description: string;
-  category?: string;
-}
-
-export interface FAQ {
-  question: string;
-  answer: string;
+  updated_at?: string;
 }
