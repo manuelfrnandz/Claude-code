@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { config } from '../config';
 import { validateSignature } from '../middleware/validateSignature';
 import { parseWebhookBody } from '../services/whatsapp/parser';
+import { messageQueue } from '../services/queue/messageQueue';
 import { logger } from '../utils/logger';
 
 export const webhookRouter = Router();
@@ -35,10 +36,10 @@ webhookRouter.post('/webhook', validateSignature, (req: Request, res: Response) 
       continue;
     }
 
-    // Stub: messageQueue will be wired in Day 3
-    logger.info(
-      { type: msg.type, from: msg.from, phoneNumberId: msg.phoneNumberId, waMessageId: msg.waMessageId },
-      'webhook_message_received',
-    );
+    messageQueue
+      .add('process', { tenantId: msg.phoneNumberId, parsedMessage: msg })
+      .catch((err: Error) =>
+        logger.error({ err: err.message, waMessageId: msg.waMessageId }, 'queue_add_failed'),
+      );
   }
 });
