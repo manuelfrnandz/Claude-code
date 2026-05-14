@@ -179,6 +179,10 @@ tenantsRouter.post(
         message: 'Tenant created successfully',
       });
     } catch (err) {
+      logger.error(
+        { error: err instanceof Error ? err.message : err, stack: err instanceof Error ? err.stack : undefined },
+        'setup_error',
+      );
       next(err);
     }
   },
