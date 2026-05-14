@@ -45,3 +45,31 @@ export interface IntentResult {
   intent: Intent;
   confidence: number;
 }
+
+export interface Conversation {
+  id: string;
+  tenantId: string;
+  phone: string;
+  status: 'active' | 'closed' | 'handoff';
+  mode: 'ai' | 'human' | 'hybrid';
+  primaryIntent: string | null;
+  startedAt: string;
+  endedAt: string | null;
+}
+
+export interface StoredMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+export interface SaveMessageParams {
+  tenantId: string;
+  conversationId: string;
+  phone: string;
+  role: 'user' | 'assistant';
+  content: string;
+  messageType: 'text' | 'audio';
+  waMessageId?: string;
+}

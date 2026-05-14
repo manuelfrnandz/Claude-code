@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config';
-import type { TenantConfig } from '../types';
+import type { TenantConfig, Conversation, StoredMessage, SaveMessageParams } from '../types';
+
+export { type Conversation, type StoredMessage, type SaveMessageParams };
 
 export const supabase = createClient(config.SUPABASE_URL, config.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
@@ -53,9 +55,19 @@ export async function getTenantConfigByPhoneNumberId(
 
 // ─── Conversations ────────────────────────────────────────────────────────────
 
-export interface Conversation {
-  id: string;
-  mode: TenantConfig['conversationMode'];
+const CONVERSATION_SELECT = 'id, tenant_id, phone, status, mode, primary_intent, started_at, ended_at';
+
+function mapConversation(row: Record<string, unknown>): Conversation {
+  return {
+    id: row['id'] as string,
+    tenantId: row['tenant_id'] as string,
+    phone: row['phone'] as string,
+    status: row['status'] as Conversation['status'],
+    mode: row['mode'] as Conversation['mode'],
+    primaryIntent: (row['primary_intent'] as string | null) ?? null,
+    startedAt: row['started_at'] as string,
+    endedAt: (row['ended_at'] as string | null) ?? null,
+  };
 }
 
 export async function getOrCreateConversation(
@@ -64,7 +76,7 @@ export async function getOrCreateConversation(
 ): Promise<Conversation> {
   const { data: existing } = await supabase
     .from('conversations')
-    .select('id, mode')
+    .select(CONVERSATION_SELECT)
     .eq('tenant_id', tenantId)
     .eq('phone', phone)
     .eq('status', 'active')
@@ -72,29 +84,21 @@ export async function getOrCreateConversation(
     .limit(1)
     .maybeSingle();
 
-  if (existing) {
-    return {
-      id: existing.id as string,
-      mode: existing.mode as TenantConfig['conversationMode'],
-    };
-  }
+  if (existing) return mapConversation(existing as Record<string, unknown>);
 
   const { data: created, error } = await supabase
     .from('conversations')
     .insert({ tenant_id: tenantId, phone })
-    .select('id, mode')
+    .select(CONVERSATION_SELECT)
     .single();
 
   if (error) throw new Error(`getOrCreateConversation failed: ${error.message}`);
-  return {
-    id: created.id as string,
-    mode: created.mode as TenantConfig['conversationMode'],
-  };
+  return mapConversation(created as Record<string, unknown>);
 }
 
 export async function updateConversationMode(
   conversationId: string,
-  mode: TenantConfig['conversationMode'],
+  mode: Conversation['mode'],
 ): Promise<void> {
   const { error } = await supabase
     .from('conversations')
@@ -118,16 +122,6 @@ export async function updateConversationIntent(
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 
-export interface SaveMessageParams {
-  tenantId: string;
-  conversationId: string;
-  phone: string;
-  role: 'user' | 'assistant';
-  content: string;
-  messageType: 'text' | 'audio';
-  waMessageId?: string;
-}
-
 export async function saveMessage(params: SaveMessageParams): Promise<void> {
   const { error } = await supabase.from('messages').insert({
     tenant_id: params.tenantId,
@@ -142,25 +136,27 @@ export async function saveMessage(params: SaveMessageParams): Promise<void> {
   if (error) throw new Error(`saveMessage failed: ${error.message}`);
 }
 
-export interface StoredMessage {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
 export async function getRecentMessages(
   conversationId: string,
   limit: number,
 ): Promise<StoredMessage[]> {
   const { data, error } = await supabase
     .from('messages')
-    .select('role, content')
+    .select('id, role, content, created_at')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .limit(limit);
 
   if (error) throw new Error(`getRecentMessages failed: ${error.message}`);
-  // Reverse so oldest first (natural conversation order for the LLM)
-  return ((data ?? []) as StoredMessage[]).reverse();
+
+  return ((data ?? []) as Array<Record<string, unknown>>)
+    .reverse()
+    .map((row) => ({
+      id: row['id'] as string,
+      role: row['role'] as StoredMessage['role'],
+      content: row['content'] as string,
+      createdAt: row['created_at'] as string,
+    }));
 }
 
 // ─── Leads ────────────────────────────────────────────────────────────────────
