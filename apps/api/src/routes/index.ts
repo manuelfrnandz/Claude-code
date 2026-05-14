@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { webhookRouter } from './webhook';
+import { tenantsRouter } from './tenants';
+import { leadsRouter } from './leads';
+import { conversationsRouter } from './conversations';
 
 export const routes = Router();
 
@@ -9,3 +12,6 @@ routes.get('/api/v1/health', (_req: Request, res: Response) => {
 });
 
 routes.use('/', webhookRouter);
+routes.use('/', tenantsRouter);   // includes /api/v1/setup (own auth) + tenants (tenantAuth)
+routes.use('/', leadsRouter);
+routes.use('/', conversationsRouter);
