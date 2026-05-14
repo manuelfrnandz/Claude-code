@@ -35,6 +35,31 @@ conversationsRouter.get(
   },
 );
 
+// ─── GET /api/v1/conversations/:id ───────────────────────────────────────────
+
+conversationsRouter.get(
+  '/api/v1/conversations/:id',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('id', req.params['id'])
+        .eq('tenant_id', req.tenantId)
+        .single();
+
+      if (error || !data) {
+        res.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+
+      res.json(data);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // ─── GET /api/v1/conversations/:id/messages ───────────────────────────────────
 
 conversationsRouter.get(

@@ -18,8 +18,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         <NextAuthSessionProvider>
           <QueryProvider>
-            {children}
-            <Toaster />
+            <Toaster>
+              {children}
+            </Toaster>
           </QueryProvider>
         </NextAuthSessionProvider>
       </body>

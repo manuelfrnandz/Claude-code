@@ -23,18 +23,17 @@ api.interceptors.request.use((config) => {
 
 // ─── Leads ────────────────────────────────────────────────────────────────────
 export const leadsApi = {
-  list: (params?: { stage?: string; page?: number; page_size?: number }) =>
-    api.get("/leads", { params }).then((r) => r.data),
-  get: (id: string) => api.get(`/leads/${id}`).then((r) => r.data),
-  update: (id: string, data: Partial<Lead>) =>
+  list: (page = 1): Promise<PaginatedResponse<Lead>> =>
+    api.get('/leads', { params: { page, limit: 20 } }).then((r) => r.data),
+  update: (id: string, data: Partial<Lead>): Promise<Lead> =>
     api.patch(`/leads/${id}`, data).then((r) => r.data),
 };
 
 // ─── Orders ───────────────────────────────────────────────────────────────────
 export const ordersApi = {
   list: (params?: { status?: string; page?: number }) =>
-    api.get("/orders", { params }).then((r) => r.data),
-  summary: () => api.get("/orders/summary").then((r) => r.data),
+    api.get('/orders', { params }).then((r) => r.data),
+  summary: () => api.get('/orders/summary').then((r) => r.data),
   get: (id: string) => api.get(`/orders/${id}`).then((r) => r.data),
   updateStatus: (id: string, status: string) =>
     api.patch(`/orders/${id}/status`, { status }).then((r) => r.data),
@@ -42,10 +41,17 @@ export const ordersApi = {
 
 // ─── Conversations ────────────────────────────────────────────────────────────
 export const conversationsApi = {
-  list: (params?: { status?: string }) =>
-    api.get("/conversations", { params }).then((r) => r.data),
-  messages: (id: string) =>
+  list: (): Promise<PaginatedResponse<ConversationItem>> =>
+    api.get('/conversations').then((r) => r.data),
+  get: (id: string): Promise<ConversationItem> =>
+    api.get(`/conversations/${id}`).then((r) => r.data),
+  messages: (id: string): Promise<{ data: MessageItem[]; conversationId: string }> =>
     api.get(`/conversations/${id}/messages`).then((r) => r.data),
+  setMode: (
+    id: string,
+    mode: 'ai' | 'human' | 'hybrid',
+  ): Promise<{ conversationId: string; mode: string }> =>
+    api.patch(`/conversations/${id}/mode`, { mode }).then((r) => r.data),
 };
 
 // ─── Tenant Config ────────────────────────────────────────────────────────────
@@ -91,12 +97,39 @@ export async function setupTenant(
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit?: number;
+}
+
+export interface ConversationItem {
+  id: string;
+  tenant_id: string;
+  phone: string;
+  status: 'active' | 'closed' | 'handoff';
+  mode: 'ai' | 'human' | 'hybrid';
+  primary_intent: string | null;
+  started_at: string;
+  ended_at: string | null;
+}
+
+export interface MessageItem {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  message_type: string;
+  created_at: string;
+}
+
 export interface Lead {
   id: string;
   phone_number: string;
   name: string | null;
   email: string | null;
-  stage: string;
+  stage: 'nuevo' | 'calificado' | 'convertido' | 'perdido';
   intent_detected: string | null;
   first_contact_at: string;
   last_contact_at: string;
