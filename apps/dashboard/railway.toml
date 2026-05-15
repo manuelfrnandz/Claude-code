@@ -1,0 +1,7 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/dashboard/Dockerfile"
+
+[deploy]
+startCommand = "npm run start --workspace=apps/dashboard"
+healthcheckPath = "/"
