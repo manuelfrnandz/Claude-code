@@ -144,8 +144,11 @@ describe('processMessageJob', () => {
     );
     expect(mockUpdateConversationIntent).toHaveBeenCalledWith('conv-uuid-1', 'ventas');
     expect(mockGenerateResponse).toHaveBeenCalled();
-    expect(mockSaveMessage).toHaveBeenCalledTimes(2);
-    expect(mockSendText).toHaveBeenCalledWith(
+    // 3 saves: welcome message + user message + assistant reply
+    expect(mockSaveMessage).toHaveBeenCalledTimes(3);
+    // 2 sends: welcome message first, then AI reply
+    expect(mockSendText).toHaveBeenCalledTimes(2);
+    expect(mockSendText).toHaveBeenLastCalledWith(
       'phone-number-id-123',
       BASE_TENANT.waAccessToken,
       '521234567890',
@@ -195,6 +198,8 @@ describe('processMessageJob', () => {
 
   it('saves user message but skips AI response in human mode', async () => {
     mockGetOrCreateConversation.mockResolvedValue({ ...BASE_CONVERSATION, mode: 'human' });
+    // Simulate existing conversation so welcome is not triggered
+    mockGetRecentMessages.mockResolvedValue([{ id: 'm1', role: 'user', content: 'prev', createdAt: '' }]);
 
     await processMessageJob(makeJob(TEXT_JOB_DATA));
 
@@ -210,6 +215,8 @@ describe('processMessageJob', () => {
 
   it('runs full AI pipeline in hybrid mode', async () => {
     mockGetOrCreateConversation.mockResolvedValue({ ...BASE_CONVERSATION, mode: 'hybrid' });
+    // Simulate existing conversation so welcome is not triggered
+    mockGetRecentMessages.mockResolvedValue([{ id: 'm1', role: 'user', content: 'prev', createdAt: '' }]);
 
     await processMessageJob(makeJob(TEXT_JOB_DATA));
 
@@ -291,12 +298,15 @@ describe('processMessageJob', () => {
 
     await processMessageJob(makeJob(TEXT_JOB_DATA));
 
-    expect(mockSendText).toHaveBeenCalledWith(
+    // sendText called twice: welcome + fallback reply
+    expect(mockSendText).toHaveBeenCalledTimes(2);
+    expect(mockSendText).toHaveBeenLastCalledWith(
       expect.any(String),
       expect.any(String),
       '521234567890',
       fallback,
     );
-    expect(mockSaveMessage).toHaveBeenCalledTimes(2);
+    // saveMessage called 3 times: welcome + user + fallback assistant
+    expect(mockSaveMessage).toHaveBeenCalledTimes(3);
   });
 });

@@ -78,6 +78,19 @@ export async function processMessageJob(job: Job<MessageJobData>): Promise<void>
   // ── PASO 7: Load recent messages ─────────────────────────────────────────
   const recentMessages = await getRecentMessages(conversation.id, 10);
 
+  // ── PASO 7b: Send & save welcome message on first interaction ────────────
+  if (recentMessages.length === 0 && tenantConfig.welcomeMessage) {
+    await sendText(phoneNumberId, waAccessToken, msg.from, tenantConfig.welcomeMessage);
+    await saveMessage({
+      tenantId,
+      conversationId: conversation.id,
+      phone: msg.from,
+      role: 'assistant',
+      content: tenantConfig.welcomeMessage,
+      messageType: 'text',
+    });
+  }
+
   // ── PASO 8: Mode routing ──────────────────────────────────────────────────
   if (conversation.mode === 'human') {
     await saveMessage({
