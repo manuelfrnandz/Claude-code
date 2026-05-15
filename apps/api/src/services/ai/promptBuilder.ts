@@ -62,6 +62,7 @@ export function buildSystemPrompt(tenant: TenantConfig): string {
     'Responde de forma concisa y útil.',
     'Si no sabes algo, dilo con honestidad.',
     'No inventes precios ni información.',
+    'Si ya hay mensajes previos en el historial, NO te presentes de nuevo. La presentación solo ocurre cuando el historial está vacío.',
   ];
   if (tenant.phoneHuman) {
     rules.push(`Si el cliente necesita ayuda humana, indícale que puede contactar a: ${tenant.phoneHuman}`);
