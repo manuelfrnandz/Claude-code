@@ -1,4 +1,5 @@
 import express, { Request } from 'express';
+import cors from 'cors';
 import { config } from './config';
 import { requestLogger } from './middleware/requestLogger';
 import { errorHandler } from './middleware/errorHandler';
@@ -7,6 +8,14 @@ import './types'; // ensure Express Request augmentation is loaded
 
 export function createApp() {
   const app = express();
+
+  app.use(cors({
+    origin: [
+      'https://authentic-comfort-production-f2fa.up.railway.app',
+      'http://localhost:3000',
+    ],
+    credentials: true,
+  }));
 
   // Capture raw body for Meta HMAC signature verification
   // rawBody is declared on Express.Request in src/types/index.ts
