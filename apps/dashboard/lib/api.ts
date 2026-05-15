@@ -1,9 +1,7 @@
 import axios from "axios";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL
-  || (typeof window !== 'undefined' && window.location.hostname !== 'localhost'
-    ? 'https://claude-code-production-665a.up.railway.app'
-    : 'http://localhost:3001');
+const API_BASE = 'https://claude-code-production-665a.up.railway.app';
+const TENANT_ID = '63e9cfd8-7273-4575-81b9-cd968a90eb18';
 
 export const api = axios.create({
   baseURL: `${API_BASE}/api/v1`,
@@ -16,8 +14,7 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   const tenantId =
     (typeof window !== 'undefined' ? localStorage.getItem('tenant_id') : null) ??
-    process.env.NEXT_PUBLIC_TENANT_ID ??
-    '';
+    TENANT_ID;
   if (tenantId) {
     config.headers['X-Tenant-ID'] = tenantId;
   }
