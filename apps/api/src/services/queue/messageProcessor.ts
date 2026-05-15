@@ -114,17 +114,7 @@ export async function processMessageJob(job: Job<MessageJobData>): Promise<void>
   const { intent } = await classifyIntent(text, tenantConfig.enabledIntents);
   await updateConversationIntent(conversation.id, intent);
 
-  // ── PASO 10: Build system prompt ──────────────────────────────────────────
-  const systemPrompt = buildSystemPrompt(tenantConfig);
-
-  // ── PASO 11: Generate AI response ────────────────────────────────────────
-  const chatHistory: ChatMessage[] = recentMessages.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
-  const responseText = await generateResponse(chatHistory, systemPrompt, tenantId);
-
-  // ── PASO 12: Persist user + assistant messages ────────────────────────────
+  // ── PASO 10: Persist user message BEFORE calling Claude ──────────────────
   await saveMessage({
     tenantId,
     conversationId: conversation.id,
@@ -134,6 +124,18 @@ export async function processMessageJob(job: Job<MessageJobData>): Promise<void>
     messageType,
     waMessageId: msg.waMessageId,
   });
+
+  // ── PASO 11: Build system prompt ──────────────────────────────────────────
+  const systemPrompt = buildSystemPrompt(tenantConfig);
+
+  // ── PASO 12: Generate AI response (history already includes current msg) ──
+  const chatHistory: ChatMessage[] = [...recentMessages, { role: 'user' as const, content: text }].map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
+  const responseText = await generateResponse(chatHistory, systemPrompt, tenantId);
+
+  // ── PASO 13: Persist assistant message ───────────────────────────────────
   await saveMessage({
     tenantId,
     conversationId: conversation.id,
