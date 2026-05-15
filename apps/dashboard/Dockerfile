@@ -26,7 +26,7 @@ COPY apps/dashboard/package*.json ./apps/dashboard/
 RUN npm ci --workspace=apps/dashboard --omit=dev
 
 COPY --from=builder /app/apps/dashboard/.next ./apps/dashboard/.next
-COPY --from=builder /app/apps/dashboard/public ./apps/dashboard/public
+RUN mkdir -p ./apps/dashboard/public
 COPY --from=builder /app/apps/dashboard/next.config.ts ./apps/dashboard/next.config.ts
 
 EXPOSE 3000
